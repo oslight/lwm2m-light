@@ -11,6 +11,7 @@
 #include <zephyr.h>
 #include <board.h>
 #include <gpio.h>
+#include <pwm.h>
 #include <net/lwm2m.h>
 #include <tc_util.h>
 
@@ -21,70 +22,135 @@
 #include "product_id.h"
 #include "lwm2m.h"
 
-/* Defines and configs for the IPSO elements */
-#define LED_GPIO_PIN		LED0_GPIO_PIN
-#define LED_GPIO_PORT		LED0_GPIO_PORT
-
-static struct device *led_dev;
-static u32_t led_current;
-
 struct device *flash_dev;
 
+/* 100 is more than enough for it to be flicker free */
+#define PWM_PERIOD (USEC_PER_SEC / 100)
+
+/* Defines and configs for the IPSO elements */
+#if defined(CONFIG_BOARD_96B_CARBON)
+#define PWM_WHITE_DEV	CONFIG_PWM_STM32_3_DEV_NAME
+#define PWM_WHITE_CH	1
+#define PWM_RED_DEV	CONFIG_PWM_STM32_3_DEV_NAME
+#define PWM_RED_CH	2
+#define PWM_GREEN_DEV	CONFIG_PWM_STM32_3_DEV_NAME
+#define PWM_GREEN_CH	3
+#define PWM_BLUE_DEV	CONFIG_PWM_STM32_3_DEV_NAME
+#define PWM_BLUE_CH	4
+#else
+#error "Choose supported board or add new board for the application"
+#endif
+
+/* Initial dimmer value (%) */
+#define DIMMER_INITIAL	50
+
+static struct device *pwm_dev[4];
+
+/* TODO: Extend to cover a scale factor for different voltage ranges */
+static u32_t scale_pulse(u8_t dimmer)
+{
+	return PWM_PERIOD * dimmer / 100;
+}
+
+static int write_pwm_pin(struct device *pwm_dev, u32_t pwm_pin,
+		         u32_t pulse_width)
+{
+	return pwm_pin_set_usec(pwm_dev, pwm_pin, PWM_PERIOD, pulse_width);
+}
+
 /* TODO: Move to a pre write hook that can handle ret codes once available */
-static int led_on_off_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
-			 bool last_block, size_t total_size)
+static int dimmer_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
+		     bool last_block, size_t total_size)
 {
 	int ret = 0;
-	u32_t led_val;
+	bool on_off;
+	u8_t dimmer;
+	u32_t pulse;
 
-	led_val = *(u8_t *) data;
-	if (led_val != led_current) {
-		ret = gpio_pin_write(led_dev, LED_GPIO_PIN, led_val);
-		if (ret) {
-			/*
-			 * We need an extra hook in LWM2M to better handle
-			 * failures before writing the data value and not in
-			 * post_write_cb, as there is not much that can be
-			 * done here.
-			 */
-			SYS_LOG_ERR("Fail to write to GPIO %d", LED_GPIO_PIN);
-			return ret;
-		}
-		led_current = led_val;
-		/* TODO: Move to be set by the IPSO object itself */
-		lwm2m_engine_set_s32("3311/0/5852", 0);
+	/* Only react if light is ON */
+	on_off = lwm2m_engine_get_bool("3311/0/5850");
+	if (!on_off) {
+		SYS_LOG_DBG("Not updating PWM, light is OFF");
+		return ret;
+	}
+
+	dimmer = *(u8_t *) data;
+	if (dimmer < 0) {
+		SYS_LOG_ERR("Invalid dimmer value, forcing it to 0");
+		dimmer = 0;
+	}
+	if (dimmer > 100) {
+		SYS_LOG_ERR("Invalid dimmer value, forcing it to 100");
+		dimmer = 100;
+	}
+
+	pulse = scale_pulse(dimmer);
+
+	/* TODO: Support other colors */
+	ret = write_pwm_pin(pwm_dev[0], PWM_WHITE_CH, pulse);
+	if (ret) {
+		SYS_LOG_ERR("Failed to write PWM pin");
+		return ret;
 	}
 
 	return ret;
 }
 
-static int init_led_device(void)
+/* TODO: Move to a pre write hook that can handle ret codes once available */
+static int on_off_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
+			 bool last_block, size_t total_size)
 {
-	int ret;
+	int ret = 0;
+	u8_t on_off, dimmer;
+	u32_t pulse;
 
-	led_dev = device_get_binding(LED_GPIO_PORT);
-	SYS_LOG_INF("%s LED GPIO port %s",
-			led_dev ? "Found" : "Did not find",
-			LED_GPIO_PORT);
+	on_off = *(u8_t *) data;
 
-	if (!led_dev) {
-		SYS_LOG_ERR("No LED device found.");
+	/* Play safe until the engine can protect the range */
+	dimmer = lwm2m_engine_get_u8("3311/0/5851");
+	if (dimmer < 0) {
+		dimmer = 0;
+	}
+	if (dimmer > 100) {
+		dimmer = 100;
+	}
+
+	/* Pulse to write to the PWM pin */
+	pulse = on_off * scale_pulse(dimmer);
+
+	/* TODO: Support other colors */
+	ret = write_pwm_pin(pwm_dev[0], PWM_WHITE_CH, pulse);
+	if (ret) {
+		/*
+		 * We need an extra hook in LWM2M to better handle
+		 * failures before writing the data value and not in
+		 * post_write_cb, as there is not much that can be
+		 * done here.
+		 */
+		SYS_LOG_ERR("Failed to write PWM pin");
+		return ret;
+	}
+
+	/* TODO: Move to be set by the IPSO object itself */
+	lwm2m_engine_set_s32("3311/0/5852", 0);
+
+	return ret;
+}
+
+static int init_pwm_devices(void)
+{
+	int ret = 0;
+
+	pwm_dev[0] = device_get_binding(PWM_WHITE_DEV);
+	pwm_dev[1] = device_get_binding(PWM_RED_DEV);
+	pwm_dev[2] = device_get_binding(PWM_GREEN_DEV);
+	pwm_dev[3] = device_get_binding(PWM_BLUE_DEV);
+	if (!pwm_dev[0] || !pwm_dev[1] || !pwm_dev[2] || !pwm_dev[3]) {
+		SYS_LOG_ERR("Failed to initialize PWM devices");
 		return -ENODEV;
 	}
 
-	ret = gpio_pin_configure(led_dev, LED_GPIO_PIN, GPIO_DIR_OUT);
-	if (ret) {
-		SYS_LOG_ERR("Error configuring LED GPIO.");
-		return ret;
-	}
-
-	ret = gpio_pin_write(led_dev, LED_GPIO_PIN, 0);
-	if (ret) {
-		SYS_LOG_ERR("Error setting LED GPIO.");
-		return ret;
-	}
-
-	return 0;
+	return ret;
 }
 
 void main(void)
@@ -97,15 +163,16 @@ void main(void)
 		    product_id_get()->name, product_id_get()->number);
 
 	TC_PRINT("Initializing LWM2M IPSO Light Control\n");
-	if (init_led_device()) {
-		_TC_END_RESULT(TC_FAIL, "init_led_device");
+	if (init_pwm_devices()) {
+		_TC_END_RESULT(TC_FAIL, "init_pwm_devices");
 		TC_END_REPORT(TC_FAIL);
 		return;
 	}
 	lwm2m_engine_create_obj_inst("3311/0");
-	lwm2m_engine_register_post_write_callback("3311/0/5850",
-			led_on_off_cb);
-	_TC_END_RESULT(TC_PASS, "init_led_device");
+	lwm2m_engine_register_post_write_callback("3311/0/5850", on_off_cb);
+	lwm2m_engine_set_u8("3311/0/5851", DIMMER_INITIAL);
+	lwm2m_engine_register_post_write_callback("3311/0/5851", dimmer_cb);
+	_TC_END_RESULT(TC_PASS, "init_pwm_devices");
 
 	TC_PRINT("Initializing LWM2M Engine\n");
 	if (lwm2m_init()) {

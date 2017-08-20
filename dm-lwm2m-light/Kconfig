@@ -46,6 +46,7 @@ config FOTA_DEVICE_SOC_SERIES_STM32F4X
 	select NET_L2_BT_ZEP1656
 	select NET_IPV6
 	select TEST_RANDOM_GENERATOR
+	select PWM_STM32
 	default n
 
 config SYS_LOG_FOTA_LEVEL
