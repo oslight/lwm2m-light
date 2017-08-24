@@ -188,17 +188,38 @@ void main(void)
 	SYS_LOG_INF("Device: %s, Serial: %x",
 		    product_id_get()->name, product_id_get()->number);
 
-	TC_PRINT("Initializing LWM2M IPSO Light Control\n");
+	TC_PRINT("Initializing PWM devices\n");
 	if (init_pwm_devices()) {
 		_TC_END_RESULT(TC_FAIL, "init_pwm_devices");
 		TC_END_REPORT(TC_FAIL);
 		return;
 	}
-	lwm2m_engine_create_obj_inst("3311/0");
-	lwm2m_engine_register_post_write_callback("3311/0/5850", on_off_cb);
-	lwm2m_engine_set_u8("3311/0/5851", DIMMER_INITIAL);
-	lwm2m_engine_register_post_write_callback("3311/0/5851", dimmer_cb);
 	_TC_END_RESULT(TC_PASS, "init_pwm_devices");
+
+	TC_PRINT("Initializing LWM2M IPSO Light Control\n");
+	if (lwm2m_engine_create_obj_inst("3311/0")) {
+		_TC_END_RESULT(TC_FAIL, "init_ipso_light");
+		TC_END_REPORT(TC_FAIL);
+		return;
+	}
+	if (lwm2m_engine_register_post_write_callback("3311/0/5850",
+				on_off_cb)) {
+		_TC_END_RESULT(TC_FAIL, "init_ipso_light");
+		TC_END_REPORT(TC_FAIL);
+		return;
+	}
+	if (lwm2m_engine_set_u8("3311/0/5851", DIMMER_INITIAL)) {
+		_TC_END_RESULT(TC_FAIL, "init_ipso_light");
+		TC_END_REPORT(TC_FAIL);
+		return;
+	}
+	if (lwm2m_engine_register_post_write_callback("3311/0/5851",
+				dimmer_cb)) {
+		_TC_END_RESULT(TC_FAIL, "init_ipso_light");
+		TC_END_REPORT(TC_FAIL);
+		return;
+	}
+	_TC_END_RESULT(TC_PASS, "init_ipso_light");
 
 	TC_PRINT("Initializing LWM2M Engine\n");
 	if (lwm2m_init()) {
