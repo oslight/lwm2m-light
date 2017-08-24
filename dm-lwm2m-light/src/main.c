@@ -24,6 +24,10 @@
 
 struct device *flash_dev;
 
+/* Color Unit used by the IPSO object */
+#define COLOR_UNIT	"hex"
+#define COLOR_WHITE	"#FFFFFF"
+
 /* 100 is more than enough for it to be flicker free */
 #define PWM_PERIOD (USEC_PER_SEC / 100)
 
@@ -50,6 +54,22 @@ static struct device *pwm_red;
 static struct device *pwm_green;
 static struct device *pwm_blue;
 
+static u8_t color_rgb[3];
+
+static u8_t char_to_nibble(char c)
+{
+	if (c >= '0' && c <= '9') {
+		return c - '0';
+	}
+	if (c >= 'a' && c <= 'f') {
+		return c - 'a' + 10U;
+	}
+	if (c >= 'A' && c <= 'F') {
+		return c - 'A' + 10U;
+	}
+	return 15U;
+}
+
 /* TODO: Extend to cover a scale factor for different voltage ranges */
 static u32_t scale_pulse(u8_t dimmer)
 {
@@ -60,6 +80,43 @@ static int write_pwm_pin(struct device *pwm_dev, u32_t pwm_pin,
 		         u32_t pulse_width)
 {
 	return pwm_pin_set_usec(pwm_dev, pwm_pin, PWM_PERIOD, pulse_width);
+}
+
+/* TODO: Move to a pre write hook that can handle ret codes once available */
+static int color_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
+		     bool last_block, size_t total_size)
+{
+	int ret = 0;
+	int i;
+	char *color;
+
+	color = (char *) data;
+
+	/* Check if just HEX and #HEX */
+	if (data_len < 6 || data_len > 7) {
+		SYS_LOG_ERR("Invalid color length (%s)", color);
+		return -EINVAL;
+	}
+	if (data_len == 7 && *color != '#') {
+		SYS_LOG_ERR("Invalid color format (%s)", color);
+		return -EINVAL;
+	}
+
+	/* Skip '#' if available */
+	if (data_len == 7) {
+		color += 1;
+	}
+
+	for (i = 0; i < 3; i++) {
+		color_rgb[i] = (char_to_nibble(*color) << 4) |
+					char_to_nibble(*(color + 1));
+		color += 2;
+	}
+
+	SYS_LOG_DBG("Updating RGB color to %x%x%x", color_rgb[0],
+						color_rgb[1], color_rgb[2]);
+
+	return ret;
 }
 
 /* TODO: Move to a pre write hook that can handle ret codes once available */
@@ -215,6 +272,22 @@ void main(void)
 	}
 	if (lwm2m_engine_register_post_write_callback("3311/0/5851",
 				dimmer_cb)) {
+		_TC_END_RESULT(TC_FAIL, "init_ipso_light");
+		TC_END_REPORT(TC_FAIL);
+		return;
+	}
+	if (lwm2m_engine_set_string("3311/0/5701", COLOR_UNIT)) {
+		_TC_END_RESULT(TC_FAIL, "init_ipso_light");
+		TC_END_REPORT(TC_FAIL);
+		return;
+	}
+	if (lwm2m_engine_set_string("3311/0/5706", COLOR_WHITE)) {
+		_TC_END_RESULT(TC_FAIL, "init_ipso_light");
+		TC_END_REPORT(TC_FAIL);
+		return;
+	}
+	if (lwm2m_engine_register_post_write_callback("3311/0/5706",
+				color_cb)) {
 		_TC_END_RESULT(TC_FAIL, "init_ipso_light");
 		TC_END_REPORT(TC_FAIL);
 		return;
