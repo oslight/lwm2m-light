@@ -44,7 +44,11 @@ struct device *flash_dev;
 /* Initial dimmer value (%) */
 #define DIMMER_INITIAL	50
 
-static struct device *pwm_dev[4];
+/* Support for up to 4 PWM devices */
+static struct device *pwm_white;
+static struct device *pwm_red;
+static struct device *pwm_green;
+static struct device *pwm_blue;
 
 /* TODO: Extend to cover a scale factor for different voltage ranges */
 static u32_t scale_pulse(u8_t dimmer)
@@ -87,7 +91,7 @@ static int dimmer_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
 	pulse = scale_pulse(dimmer);
 
 	/* TODO: Support other colors */
-	ret = write_pwm_pin(pwm_dev[0], PWM_WHITE_CH, pulse);
+	ret = write_pwm_pin(pwm_white, PWM_WHITE_CH, pulse);
 	if (ret) {
 		SYS_LOG_ERR("Failed to write PWM pin");
 		return ret;
@@ -119,7 +123,7 @@ static int on_off_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
 	pulse = on_off * scale_pulse(dimmer);
 
 	/* TODO: Support other colors */
-	ret = write_pwm_pin(pwm_dev[0], PWM_WHITE_CH, pulse);
+	ret = write_pwm_pin(pwm_white, PWM_WHITE_CH, pulse);
 	if (ret) {
 		/*
 		 * We need an extra hook in LWM2M to better handle
@@ -139,18 +143,40 @@ static int on_off_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
 
 static int init_pwm_devices(void)
 {
-	int ret = 0;
-
-	pwm_dev[0] = device_get_binding(PWM_WHITE_DEV);
-	pwm_dev[1] = device_get_binding(PWM_RED_DEV);
-	pwm_dev[2] = device_get_binding(PWM_GREEN_DEV);
-	pwm_dev[3] = device_get_binding(PWM_BLUE_DEV);
-	if (!pwm_dev[0] || !pwm_dev[1] || !pwm_dev[2] || !pwm_dev[3]) {
-		SYS_LOG_ERR("Failed to initialize PWM devices");
+#if defined(PWM_WHITE_DEV)
+	pwm_white = device_get_binding(PWM_WHITE_DEV);
+	if (!pwm_white) {
+		SYS_LOG_ERR("Failed to get PWM device %s (white)",
+				PWM_WHITE_DEV);
 		return -ENODEV;
 	}
+#endif
+#if defined(PWM_RED_DEV)
+	pwm_red = device_get_binding(PWM_RED_DEV);
+	if (!pwm_red) {
+		SYS_LOG_ERR("Failed to get PWM device %s (red)",
+				PWM_RED_DEV);
+		return -ENODEV;
+	}
+#endif
+#if defined(PWM_GREEN_DEV)
+	pwm_green = device_get_binding(PWM_GREEN_DEV);
+	if (!pwm_green) {
+		SYS_LOG_ERR("Failed to get PWM device %s (green)",
+				PWM_GREEN_DEV);
+		return -ENODEV;
+	}
+#endif
+#if defined(PWM_BLUE_DEV)
+	pwm_blue = device_get_binding(PWM_BLUE_DEV);
+	if (!pwm_blue) {
+		SYS_LOG_ERR("Failed to get PWM device %s (blue)",
+				PWM_BLUE_DEV);
+		return -ENODEV;
+	}
+#endif
 
-	return ret;
+	return 0;
 }
 
 void main(void)
