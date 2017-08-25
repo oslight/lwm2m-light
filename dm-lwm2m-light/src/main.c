@@ -31,20 +31,6 @@ struct device *flash_dev;
 /* 100 is more than enough for it to be flicker free */
 #define PWM_PERIOD (USEC_PER_SEC / 100)
 
-/* Defines and configs for the IPSO elements */
-#if defined(CONFIG_BOARD_96B_CARBON)
-#define PWM_WHITE_DEV	CONFIG_PWM_STM32_3_DEV_NAME
-#define PWM_WHITE_CH	1
-#define PWM_RED_DEV	CONFIG_PWM_STM32_3_DEV_NAME
-#define PWM_RED_CH	2
-#define PWM_GREEN_DEV	CONFIG_PWM_STM32_3_DEV_NAME
-#define PWM_GREEN_CH	3
-#define PWM_BLUE_DEV	CONFIG_PWM_STM32_3_DEV_NAME
-#define PWM_BLUE_CH	4
-#else
-#error "Choose supported board or add new board for the application"
-#endif
-
 /* Initial dimmer value (%) */
 #define DIMMER_INITIAL	50
 
@@ -100,7 +86,7 @@ static int update_pwm(u8_t *color_rgb, u8_t dimmer)
 		dimmer = 100;
 	}
 
-#if defined(PWM_WHITE_DEV)
+#if defined(CONFIG_APP_PWM_WHITE)
 	/* If a dedicated PWM is used for white, zero RGB */
 	if (rgb[0] == 0xFF && rgb[1] == 0xFF && rgb[2] == 0xFF) {
 		rgb[0] = rgb[1] = rgb[2] = 0;
@@ -108,7 +94,7 @@ static int update_pwm(u8_t *color_rgb, u8_t dimmer)
 	}
 
 	white = white * dimmer / 100;
-	ret = write_pwm_pin(pwm_white, PWM_WHITE_CH, white);
+	ret = write_pwm_pin(pwm_white, CONFIG_APP_PWM_WHITE_PIN, white);
 	if (ret) {
 		SYS_LOG_ERR("Failed to update white PWM");
 		return ret;
@@ -126,24 +112,24 @@ static int update_pwm(u8_t *color_rgb, u8_t dimmer)
 		rgb[i] = rgb[i] * dimmer / 100;
 	}
 
-#if defined(PWM_RED_DEV)
-	ret = write_pwm_pin(pwm_red, PWM_RED_CH, rgb[0]);
+#if defined(CONFIG_APP_PWM_RED)
+	ret = write_pwm_pin(pwm_red, CONFIG_APP_PWM_RED_PIN, rgb[0]);
 	if (ret) {
 		SYS_LOG_ERR("Failed to update red PWM");
 		return ret;
 	}
 #endif
 
-#if defined(PWM_GREEN_DEV)
-	ret = write_pwm_pin(pwm_green, PWM_GREEN_CH, rgb[1]);
+#if defined(CONFIG_APP_PWM_GREEN)
+	ret = write_pwm_pin(pwm_green, CONFIG_APP_PWM_GREEN_PIN, rgb[1]);
 	if (ret) {
 		SYS_LOG_ERR("Failed to update green PWM");
 		return ret;
 	}
 #endif
 
-#if defined(PWM_BLUE_DEV)
-	ret = write_pwm_pin(pwm_blue, PWM_BLUE_CH, rgb[2]);
+#if defined(CONFIG_APP_PWM_BLUE)
+	ret = write_pwm_pin(pwm_blue, CONFIG_APP_PWM_BLUE_PIN, rgb[2]);
 	if (ret) {
 		SYS_LOG_ERR("Failed to update blue PWM");
 		return ret;
@@ -259,35 +245,31 @@ static int on_off_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
 
 static int init_pwm_devices(void)
 {
-#if defined(PWM_WHITE_DEV)
-	pwm_white = device_get_binding(PWM_WHITE_DEV);
+#if defined(CONFIG_APP_PWM_WHITE)
+	pwm_white = device_get_binding(CONFIG_APP_PWM_WHITE_DEV);
 	if (!pwm_white) {
-		SYS_LOG_ERR("Failed to get PWM device %s (white)",
-				PWM_WHITE_DEV);
+		SYS_LOG_ERR("Failed to get PWM device used for white");
 		return -ENODEV;
 	}
 #endif
-#if defined(PWM_RED_DEV)
-	pwm_red = device_get_binding(PWM_RED_DEV);
+#if defined(CONFIG_APP_PWM_RED)
+	pwm_red = device_get_binding(CONFIG_APP_PWM_RED_DEV);
 	if (!pwm_red) {
-		SYS_LOG_ERR("Failed to get PWM device %s (red)",
-				PWM_RED_DEV);
+		SYS_LOG_ERR("Failed to get PWM device used for red");
 		return -ENODEV;
 	}
 #endif
-#if defined(PWM_GREEN_DEV)
-	pwm_green = device_get_binding(PWM_GREEN_DEV);
+#if defined(CONFIG_APP_PWM_GREEN)
+	pwm_green = device_get_binding(CONFIG_APP_PWM_GREEN_DEV);
 	if (!pwm_green) {
-		SYS_LOG_ERR("Failed to get PWM device %s (green)",
-				PWM_GREEN_DEV);
+		SYS_LOG_ERR("Failed to get PWM device used for green");
 		return -ENODEV;
 	}
 #endif
-#if defined(PWM_BLUE_DEV)
-	pwm_blue = device_get_binding(PWM_BLUE_DEV);
+#if defined(CONFIG_APP_PWM_BLUE)
+	pwm_blue = device_get_binding(CONFIG_APP_PWM_BLUE_DEV);
 	if (!pwm_blue) {
-		SYS_LOG_ERR("Failed to get PWM device %s (blue)",
-				PWM_BLUE_DEV);
+		SYS_LOG_ERR("Failed to get PWM device used for blue");
 		return -ENODEV;
 	}
 #endif
