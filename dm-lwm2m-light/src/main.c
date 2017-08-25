@@ -71,23 +71,95 @@ static u8_t char_to_nibble(char c)
 }
 
 /* TODO: Extend to cover a scale factor for different voltage ranges */
-static u32_t scale_pulse(u8_t dimmer)
+static u32_t scale_pulse(u8_t level)
 {
-	return PWM_PERIOD * dimmer / 100;
+	return PWM_PERIOD * level / 255;
 }
 
-static int write_pwm_pin(struct device *pwm_dev, u32_t pwm_pin,
-		         u32_t pulse_width)
+static int write_pwm_pin(struct device *pwm_dev, u32_t pwm_pin, u8_t level)
 {
-	return pwm_pin_set_usec(pwm_dev, pwm_pin, PWM_PERIOD, pulse_width);
+	u32_t pulse = scale_pulse(level);
+
+	SYS_LOG_DBG("Set PWM %d: level %d, pulse %lu", pwm_pin, level, pulse);
+
+	return pwm_pin_set_usec(pwm_dev, pwm_pin, PWM_PERIOD, pulse);
+}
+
+static int update_pwm(u8_t *color_rgb, u8_t dimmer)
+{
+	u8_t white = 0;
+	u8_t rgb[3];
+	int i, ret = 0;
+
+	memcpy(&rgb, color_rgb, 3);
+
+	if (dimmer < 0) {
+		dimmer = 0;
+	}
+	if (dimmer > 100) {
+		dimmer = 100;
+	}
+
+#if defined(PWM_WHITE_DEV)
+	/* If a dedicated PWM is used for white, zero RGB */
+	if (rgb[0] == 0xFF && rgb[1] == 0xFF && rgb[2] == 0xFF) {
+		rgb[0] = rgb[1] = rgb[2] = 0;
+		white = 255;
+	}
+
+	white = white * dimmer / 100;
+	ret = write_pwm_pin(pwm_white, PWM_WHITE_CH, white);
+	if (ret) {
+		SYS_LOG_ERR("Failed to update white PWM");
+		return ret;
+	}
+#endif
+
+	/*
+	 * Update individual color values based on dimmer.
+	 *
+	 * This is just a direct map between dimmer and PWM, but not the best
+	 * way to control the light brightness, as the human eye perceives
+	 * it differently, but good enough for now as it is a simple method.
+	 */
+	for (i = 0; i < 3; i++) {
+		rgb[i] = rgb[i] * dimmer / 100;
+	}
+
+#if defined(PWM_RED_DEV)
+	ret = write_pwm_pin(pwm_red, PWM_RED_CH, rgb[0]);
+	if (ret) {
+		SYS_LOG_ERR("Failed to update red PWM");
+		return ret;
+	}
+#endif
+
+#if defined(PWM_GREEN_DEV)
+	ret = write_pwm_pin(pwm_green, PWM_GREEN_CH, rgb[1]);
+	if (ret) {
+		SYS_LOG_ERR("Failed to update green PWM");
+		return ret;
+	}
+#endif
+
+#if defined(PWM_BLUE_DEV)
+	ret = write_pwm_pin(pwm_blue, PWM_BLUE_CH, rgb[2]);
+	if (ret) {
+		SYS_LOG_ERR("Failed to update blue PWM");
+		return ret;
+	}
+#endif
+
+	return ret;
 }
 
 /* TODO: Move to a pre write hook that can handle ret codes once available */
 static int color_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
 		     bool last_block, size_t total_size)
 {
-	int ret = 0;
-	int i;
+	int i, ret = 0;
+	bool on_off;
+	u8_t dimmer;
 	char *color;
 
 	color = (char *) data;
@@ -113,8 +185,19 @@ static int color_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
 		color += 2;
 	}
 
-	SYS_LOG_DBG("Updating RGB color to %x%x%x", color_rgb[0],
-						color_rgb[1], color_rgb[2]);
+	SYS_LOG_DBG("RGB color updated to %x%x%x", color_rgb[0],
+					color_rgb[1], color_rgb[2]);
+
+	/* Update PWM output if light is 'on' */
+	on_off = lwm2m_engine_get_bool("3311/0/5850");
+	if (on_off) {
+		dimmer = lwm2m_engine_get_u8("3311/0/5851");
+		ret = update_pwm(color_rgb, dimmer);
+		if (ret) {
+			SYS_LOG_ERR("Failed to update color");
+			return ret;
+		}
+	}
 
 	return ret;
 }
@@ -126,14 +209,6 @@ static int dimmer_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
 	int ret = 0;
 	bool on_off;
 	u8_t dimmer;
-	u32_t pulse;
-
-	/* Only react if light is ON */
-	on_off = lwm2m_engine_get_bool("3311/0/5850");
-	if (!on_off) {
-		SYS_LOG_DBG("Not updating PWM, light is OFF");
-		return ret;
-	}
 
 	dimmer = *(u8_t *) data;
 	if (dimmer < 0) {
@@ -145,13 +220,14 @@ static int dimmer_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
 		dimmer = 100;
 	}
 
-	pulse = scale_pulse(dimmer);
-
-	/* TODO: Support other colors */
-	ret = write_pwm_pin(pwm_white, PWM_WHITE_CH, pulse);
-	if (ret) {
-		SYS_LOG_ERR("Failed to write PWM pin");
-		return ret;
+	/* Update PWM output if light is 'on' */
+	on_off = lwm2m_engine_get_bool("3311/0/5850");
+	if (on_off) {
+		ret = update_pwm(color_rgb, dimmer);
+		if (ret) {
+			SYS_LOG_ERR("Failed to update dimmer");
+			return ret;
+		}
 	}
 
 	return ret;
@@ -162,33 +238,16 @@ static int on_off_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
 			 bool last_block, size_t total_size)
 {
 	int ret = 0;
-	u8_t on_off, dimmer;
-	u32_t pulse;
+	u8_t on_off, dimmer = 0;
 
 	on_off = *(u8_t *) data;
-
-	/* Play safe until the engine can protect the range */
-	dimmer = lwm2m_engine_get_u8("3311/0/5851");
-	if (dimmer < 0) {
-		dimmer = 0;
-	}
-	if (dimmer > 100) {
-		dimmer = 100;
+	if (on_off) {
+		dimmer = lwm2m_engine_get_u8("3311/0/5851");
 	}
 
-	/* Pulse to write to the PWM pin */
-	pulse = on_off * scale_pulse(dimmer);
-
-	/* TODO: Support other colors */
-	ret = write_pwm_pin(pwm_white, PWM_WHITE_CH, pulse);
+	ret = update_pwm(color_rgb, dimmer);
 	if (ret) {
-		/*
-		 * We need an extra hook in LWM2M to better handle
-		 * failures before writing the data value and not in
-		 * post_write_cb, as there is not much that can be
-		 * done here.
-		 */
-		SYS_LOG_ERR("Failed to write PWM pin");
+		SYS_LOG_ERR("Failed to update light state");
 		return ret;
 	}
 
@@ -241,6 +300,9 @@ void main(void)
 	tstamp_hook_install();
 	app_wq_init();
 
+	/* Initial color: white */
+	color_rgb[0] = color_rgb[1] = color_rgb[2] = 0xFF;
+
 	SYS_LOG_INF("LWM2M Smart Light Bulb");
 	SYS_LOG_INF("Device: %s, Serial: %x",
 		    product_id_get()->name, product_id_get()->number);
@@ -251,6 +313,8 @@ void main(void)
 		TC_END_REPORT(TC_FAIL);
 		return;
 	}
+	/* Force all PWM output pins to 0 */
+	update_pwm(color_rgb, 0);
 	_TC_END_RESULT(TC_PASS, "init_pwm_devices");
 
 	TC_PRINT("Initializing LWM2M IPSO Light Control\n");
