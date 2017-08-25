@@ -19,6 +19,12 @@ config APP_PWM_WHITE_PIN
 	prompt "PWM pin number used for white"
 	default 0
 
+config APP_PWM_WHITE_PIN_CEILING
+	int
+	prompt "PWM pin level ceiling"
+	default 255
+	range 1 255
+
 endif # APP_PWM_WHITE
 
 config APP_PWM_RED
@@ -36,6 +42,12 @@ config APP_PWM_RED_PIN
 	int
 	prompt "PWM pin number used for red"
 	default 0
+
+config APP_PWM_RED_PIN_CEILING
+	int
+	prompt "PWM pin level ceiling"
+	default 255
+	range 1 255
 
 endif # APP_PWM_RED
 
@@ -55,6 +67,12 @@ config APP_PWM_GREEN_PIN
 	prompt "PWM pin number used for green"
 	default 0
 
+config APP_PWM_GREEN_PIN_CEILING
+	int
+	prompt "PWM pin level ceiling"
+	default 255
+	range 1 255
+
 endif # APP_PWM_GREEN
 
 config APP_PWM_BLUE
@@ -72,5 +90,11 @@ config APP_PWM_BLUE_PIN
 	int
 	prompt "PWM pin number used for blue"
 	default 0
+
+config APP_PWM_BLUE_PIN_CEILING
+	int
+	prompt "PWM pin level ceiling"
+	default 255
+	range 1 255
 
 endif # APP_PWM_BLUE

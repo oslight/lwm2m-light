@@ -56,17 +56,23 @@ static u8_t char_to_nibble(char c)
 	return 15U;
 }
 
-/* TODO: Extend to cover a scale factor for different voltage ranges */
-static u32_t scale_pulse(u8_t level)
+static u32_t scale_pulse(u8_t level, u8_t ceiling)
 {
-	return PWM_PERIOD * level / 255;
+	if (level && ceiling) {
+		/* Scale level based on ceiling and return period */
+		return PWM_PERIOD / 255 * level * ceiling / 255;
+	}
+
+	return 0;
 }
 
-static int write_pwm_pin(struct device *pwm_dev, u32_t pwm_pin, u8_t level)
+static int write_pwm_pin(struct device *pwm_dev, u32_t pwm_pin,
+			 u8_t level, u8_t ceiling)
 {
-	u32_t pulse = scale_pulse(level);
+	u32_t pulse = scale_pulse(level, ceiling);
 
-	SYS_LOG_DBG("Set PWM %d: level %d, pulse %lu", pwm_pin, level, pulse);
+	SYS_LOG_DBG("Set PWM %d: level %d, ceiling %d, pulse %lu",
+				pwm_pin, level, ceiling, pulse);
 
 	return pwm_pin_set_usec(pwm_dev, pwm_pin, PWM_PERIOD, pulse);
 }
@@ -94,7 +100,8 @@ static int update_pwm(u8_t *color_rgb, u8_t dimmer)
 	}
 
 	white = white * dimmer / 100;
-	ret = write_pwm_pin(pwm_white, CONFIG_APP_PWM_WHITE_PIN, white);
+	ret = write_pwm_pin(pwm_white, CONFIG_APP_PWM_WHITE_PIN,
+				white, CONFIG_APP_PWM_WHITE_PIN_CEILING);
 	if (ret) {
 		SYS_LOG_ERR("Failed to update white PWM");
 		return ret;
@@ -113,7 +120,8 @@ static int update_pwm(u8_t *color_rgb, u8_t dimmer)
 	}
 
 #if defined(CONFIG_APP_PWM_RED)
-	ret = write_pwm_pin(pwm_red, CONFIG_APP_PWM_RED_PIN, rgb[0]);
+	ret = write_pwm_pin(pwm_red, CONFIG_APP_PWM_RED_PIN,
+				rgb[0], CONFIG_APP_PWM_RED_PIN_CEILING);
 	if (ret) {
 		SYS_LOG_ERR("Failed to update red PWM");
 		return ret;
@@ -121,7 +129,8 @@ static int update_pwm(u8_t *color_rgb, u8_t dimmer)
 #endif
 
 #if defined(CONFIG_APP_PWM_GREEN)
-	ret = write_pwm_pin(pwm_green, CONFIG_APP_PWM_GREEN_PIN, rgb[1]);
+	ret = write_pwm_pin(pwm_green, CONFIG_APP_PWM_GREEN_PIN,
+				rgb[1], CONFIG_APP_PWM_GREEN_PIN_CEILING);
 	if (ret) {
 		SYS_LOG_ERR("Failed to update green PWM");
 		return ret;
@@ -129,7 +138,8 @@ static int update_pwm(u8_t *color_rgb, u8_t dimmer)
 #endif
 
 #if defined(CONFIG_APP_PWM_BLUE)
-	ret = write_pwm_pin(pwm_blue, CONFIG_APP_PWM_BLUE_PIN, rgb[2]);
+	ret = write_pwm_pin(pwm_blue, CONFIG_APP_PWM_BLUE_PIN,
+				rgb[2], CONFIG_APP_PWM_BLUE_PIN_CEILING);
 	if (ret) {
 		SYS_LOG_ERR("Failed to update blue PWM");
 		return ret;
