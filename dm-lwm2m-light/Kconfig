@@ -64,3 +64,5 @@ config SYS_LOG_FOTA_LEVEL
 	  - 2 WARNING: write SYS_LOG_WRN in addition to previous level
 	  - 3 INFO: write SYS_LOG_INF in addition to previous levels
 	  - 4 DEBUG: write SYS_LOG_DBG in addition to previous levels
+
+source "$APPLICATION_BASE/Kconfig.app"
