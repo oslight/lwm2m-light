@@ -107,14 +107,6 @@ static int update_pwm(u8_t *color_rgb, u8_t dimmer)
 		rgb[0] = rgb[1] = rgb[2] = 0;
 		white = 255;
 	}
-
-	white = white * dimmer / 100;
-	ret = write_pwm_pin(pwm_white, CONFIG_APP_PWM_WHITE_PIN,
-				white, CONFIG_APP_PWM_WHITE_PIN_CEILING);
-	if (ret) {
-		SYS_LOG_ERR("Failed to update white PWM");
-		return ret;
-	}
 #endif
 
 	/*
@@ -151,6 +143,16 @@ static int update_pwm(u8_t *color_rgb, u8_t dimmer)
 				rgb[2], CONFIG_APP_PWM_BLUE_PIN_CEILING);
 	if (ret) {
 		SYS_LOG_ERR("Failed to update blue PWM");
+		return ret;
+	}
+#endif
+
+#if defined(CONFIG_APP_PWM_WHITE)
+	white = white * dimmer / 100;
+	ret = write_pwm_pin(pwm_white, CONFIG_APP_PWM_WHITE_PIN,
+				white, CONFIG_APP_PWM_WHITE_PIN_CEILING);
+	if (ret) {
+		SYS_LOG_ERR("Failed to update white PWM");
 		return ret;
 	}
 #endif
