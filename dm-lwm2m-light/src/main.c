@@ -35,10 +35,18 @@ struct device *flash_dev;
 #define DIMMER_INITIAL	50
 
 /* Support for up to 4 PWM devices */
+#if defined(CONFIG_APP_PWM_WHITE)
 static struct device *pwm_white;
+#endif
+#if defined(CONFIG_APP_PWM_RED)
 static struct device *pwm_red;
+#endif
+#if defined(CONFIG_APP_PWM_GREEN)
 static struct device *pwm_green;
+#endif
+#if defined(CONFIG_APP_PWM_BLUE)
 static struct device *pwm_blue;
+#endif
 
 static u8_t color_rgb[3];
 
@@ -79,7 +87,6 @@ static int write_pwm_pin(struct device *pwm_dev, u32_t pwm_pin,
 
 static int update_pwm(u8_t *color_rgb, u8_t dimmer)
 {
-	u8_t white = 0;
 	u8_t rgb[3];
 	int i, ret = 0;
 
@@ -93,6 +100,8 @@ static int update_pwm(u8_t *color_rgb, u8_t dimmer)
 	}
 
 #if defined(CONFIG_APP_PWM_WHITE)
+	u8_t white = 0;
+
 	/* If a dedicated PWM is used for white, zero RGB */
 	if (rgb[0] == 0xFF && rgb[1] == 0xFF && rgb[2] == 0xFF) {
 		rgb[0] = rgb[1] = rgb[2] = 0;
