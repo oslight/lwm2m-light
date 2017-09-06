@@ -192,7 +192,7 @@ static int color_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
 		color += 2;
 	}
 
-	SYS_LOG_DBG("RGB color updated to %x%x%x", color_rgb[0],
+	SYS_LOG_DBG("RGB color updated to #%02x%02x%02x", color_rgb[0],
 					color_rgb[1], color_rgb[2]);
 
 	/* Update PWM output if light is 'on' */
