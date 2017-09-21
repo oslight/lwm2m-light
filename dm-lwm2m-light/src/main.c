@@ -34,13 +34,16 @@
 
 #define NUMBYTES NEOPIXEL_COUNT * 4
 
+/* Initial dimmer value (%) */
+#define DIMMER_INITIAL	15
+
 struct device *flash_dev;
 NRF_PWM_Type* pwm = NULL;
 struct device *gpio = NULL;
 uint32_t pattern_size  = NUMBYTES*8*sizeof(uint16_t)+2*sizeof(uint16_t);
 uint32_t *pixels_pattern = NULL;
 
-int neopixel_update_leds(uint8_t bit, uint32_t pattern_size, uint16_t loops)
+int neopixel_update_leds(uint8_t bit, uint32_t pattern_size, uint16_t loops, u8_t refresh)
 {
 	int ret = 0;
 	uint16_t pos = 0;
@@ -82,7 +85,7 @@ int neopixel_update_leds(uint8_t bit, uint32_t pattern_size, uint16_t loops)
 
         pwm->SEQ[0].CNT = (pattern_size/sizeof(uint16_t)) << PWM_SEQ_CNT_CNT_Pos;
 
-        pwm->SEQ[0].REFRESH  = 12;
+        pwm->SEQ[0].REFRESH  = refresh;
         pwm->SEQ[0].ENDDELAY = 0;
 
         pwm->PSEL.OUT[0] = NEOPIXEL_PWM_PIN;
@@ -103,13 +106,21 @@ int neopixel_update_leds(uint8_t bit, uint32_t pattern_size, uint16_t loops)
 	return ret;
 }
 
-void neopixel_clear(void)
+static int dimmer_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
+		     bool last_block, size_t total_size)
 {
-        static uint8_t bit = 0;
-	for( int n=0; n<1; n++ )
-	{
-		neopixel_update_leds(bit, pattern_size, NUMBYTES);
+	int ret = 0;
+	u8_t dimmer;
+
+	dimmer = *(u8_t *) data;
+	if (dimmer < 0) {
+		static uint8_t bit = 1;
+		neopixel_update_leds(bit, pattern_size, NUMBYTES, dimmer);
+	} else {
+		static uint8_t bit = 0;
+		neopixel_update_leds(bit, pattern_size, NUMBYTES, dimmer);
 	}
+	return ret;
 }
 
 /* TODO: Move to a pre write hook that can handle ret codes once available */
@@ -122,10 +133,12 @@ static int on_off_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
         on_off = *(u8_t *) data;
         if (on_off) {
                 static uint8_t bit = 1;
-		neopixel_update_leds(bit, pattern_size, NUMBYTES);
+		static u8_t refresh = 12;
+		neopixel_update_leds(bit, pattern_size, NUMBYTES, refresh);
         } else {
 		static uint8_t bit = 0;
-		neopixel_update_leds(bit, pattern_size, NUMBYTES);
+		static uint8_t refresh = -1;
+		neopixel_update_leds(bit, pattern_size, NUMBYTES, refresh);
 	}
 
         if (ret) {
@@ -186,10 +199,8 @@ void main(void)
 		TC_END_REPORT(TC_FAIL);
 		return;
 	}
-	/* Force all PWM output pins to 0 */
-	neopixel_clear();
 	_TC_END_RESULT(TC_PASS, "init_pwm_device");
-
+	
 	TC_PRINT("Initializing LWM2M IPSO Light Control\n");
 	if (lwm2m_engine_create_obj_inst("3311/0")) {
 		_TC_END_RESULT(TC_FAIL, "init_ipso_light");
@@ -198,6 +209,22 @@ void main(void)
 	}
 	if (lwm2m_engine_register_post_write_callback("3311/0/5850",
 				on_off_cb)) {
+		_TC_END_RESULT(TC_FAIL, "init_ipso_light");
+		TC_END_REPORT(TC_FAIL);
+		return;
+	}
+	if (lwm2m_engine_set_bool("3311/0/5850", true)) {
+		_TC_END_RESULT(TC_FAIL, "init_ipso_light");
+		TC_END_REPORT(TC_FAIL);
+		return;
+	}
+	if (lwm2m_engine_register_post_write_callback("3311/0/5851",
+				dimmer_cb)) {
+		_TC_END_RESULT(TC_FAIL, "init_ipso_light");
+		TC_END_REPORT(TC_FAIL);
+		return;
+	}
+	if (lwm2m_engine_set_u8("3311/0/5851", DIMMER_INITIAL)) {
 		_TC_END_RESULT(TC_FAIL, "init_ipso_light");
 		TC_END_REPORT(TC_FAIL);
 		return;
