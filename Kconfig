@@ -38,6 +38,8 @@ config FOTA_DEVICE_SOC_SERIES_NRF52X
 	select NET_L2_BT_ZEP1656
 	select NET_IPV6
 	select NET_APP_NEED_IPV6
+	select SENSOR
+	select TEMP_NRF5
 	select TEST_RANDOM_GENERATOR
 	select PWM_NRF5_SW
 	default n
